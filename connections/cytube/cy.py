@@ -41,6 +41,7 @@ class CytubeProtocol(WebSocketClientProtocol):
                 elif method.startswith('_cM_'):
                     self.triggers['changeMedia'][method] = getattr(instance, method)
 
+        self.username = cfg['username']
         self.receivedChatBuffer = False
 
 
@@ -94,7 +95,7 @@ class CytubeProtocol(WebSocketClientProtocol):
 
         # check for commands
         # avoids interpreting a relayed chat message, and also for safety
-        if username != 'Zunko' and msg.startswith('$'):
+        if username != self.username and msg.startswith('$'):
             command = msg.split()[0]
             index = msg.find(' ')
             if index != -1:
@@ -109,7 +110,7 @@ class CytubeProtocol(WebSocketClientProtocol):
 
         # don't resend our own messages - Cytube server echos messages
         # (note: IRC does not)
-        if username != 'Zunko':
+        if username != self.username:
             self.factory.yuka.relayChat(username, msg, 'cy', processCommand)
 
     def _cy_changeMedia(self, fdict):

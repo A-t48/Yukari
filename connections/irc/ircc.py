@@ -57,5 +57,5 @@ class IrcFactory(ClientFactory):
         self.channel = channel
 
 def startConnection():
-    ircFactory = IrcFactory('#mikumonday')
+    ircFactory = IrcFactory(cfg['channel'])
     return ircFactory
