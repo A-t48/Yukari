@@ -1,6 +1,7 @@
 import importlib
 import os
 from connections.cytube import cy, getSid, parser
+from connections.database import db
 from connections.irc import ircc
 from connections.telnet import telnetc
 from yukari.customlogger import clog
@@ -34,12 +35,6 @@ class Yukari(object):
         self.connectCytube()
         self.connectIrc()
         self.connectTelnet()
-        clog.debug('debug', 'DEBUG')
-        clog.info('info', 'INFO')
-        clog.warning('warning', 'WARNING')
-        clog.error('error', 'ERROR')
-        clog.critical('critical', 'CRITICAL')
-
 
     def _importPlugins(self):
         modules = importPlugins('yukari/plugins/')
