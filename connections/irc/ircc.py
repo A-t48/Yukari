@@ -5,6 +5,7 @@ from twisted.internet.protocol import ClientFactory
 from twisted.words.protocols import irc
 from yukari.config import cfg
 from yukari.customlogger import clog
+from yukari.tools import getTime
 
 cfg = cfg['irc']
 syst = 'IRC'
