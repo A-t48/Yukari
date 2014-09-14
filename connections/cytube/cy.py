@@ -128,6 +128,14 @@ class CytubeProtocol(WebSocketClientProtocol):
         else:
             clog.error('Login error: Check credentials.', syst)
 
+    def _cy_playlist(self, fdict):
+        self.playlist = []
+        clog.info('playlist received!', syst)
+        clog.info((str(fdict)).decode('unicode-escape'), syst)
+        playlist = fdict['args'][0]
+        d = _dbSelectQueuerId(self, playlist)
+        d.addCallback(_dbBulkInsertMedia, _dbBulkInsertMediaTxn, playlist)
+
     # timing could change in the future
     def _cy_setMotd(self, fdict):
         self.receivedChatBuffer = True
@@ -265,3 +273,36 @@ def _dbUsercount(usercount, anoncount, timeNow):
     values = (timeNow, usercount, anoncount)
     db.operate(sql, values)
 
+def _dbBulkInsertMedia(useridList, fn, playlist):
+    dbpl = []
+    for userid, mediad in zip(useridList, playlist):
+        media = mediad['media']
+        dbpl.append((None, media['type'], media['id'], media['seconds'],
+                     media['title'], userid, 0))
+    return db.bulkInsert(fn, dbpl)
+
+def _dbBulkInsertMediaTxn(txn, playlist):
+    sql = 'INSERT OR IGNORE INTO Media VALUES (?, ?, ?, ?, ?, ?, ?)'
+    txn.executemany(sql, playlist)
+
+def _dbSelectQueuerId(cy, playlist):
+    sql = 'SELECT UserId from CyUser WHERE nameLower=? AND registered=1'
+    # Make a list of deferreds
+    bindsList = [(mediad['queueby'],) for mediad in playlist]
+    dblist = [db.query(sql, query) for query in bindsList]
+    dl = defer.DeferredList(dblist, consumeErrors=False)
+    dl.addCallback(cbSelectQueuerId)
+    return dl
+
+def cbSelectQueuerId(results):
+    # results from a deferredList
+    useridList = []
+    for result in results:
+        if result[0]:
+           try:
+               useridList.append(result[1][0][0])
+           except(IndexError):
+               # result[1] is [] because no queueId match
+               # either guest or user not in CyUser
+               useridList.append(1) # give to Yukari
+    return defer.succeed(useridList)

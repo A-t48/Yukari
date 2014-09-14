@@ -49,8 +49,9 @@ class Yukari(object):
                     clog.info('Imported %s!' % trigger, syst)
 
     def connectCytube(self):
-        d = getSid.retreiveSid(cy.startConnection)
-        d.addCallback(self.cySetFactory)
+        if cfg['Cytube']['domain']:
+            d = getSid.retreiveSid(cy.startConnection)
+            d.addCallback(self.cySetFactory)
 
     def cySetFactory(self, factory):
         self.cytubeFactory = factory
@@ -66,12 +67,13 @@ class Yukari(object):
         clog.info('Yukari joined the cytube channel', syst)
 
     def connectIrc(self):
-        from twisted.internet import reactor
-        self.ircFactory = ircc.startConnection()
-        # give factory a reference of Yukari instance
-        self.ircFactory.yuka = self
-        reactor.connectTCP(cfg['irc']['uri'], int(cfg['irc']['port']),
-                                                     self.ircFactory)
+        if cfg['irc']['uri']:
+            from twisted.internet import reactor
+            self.ircFactory = ircc.startConnection()
+            # give factory a reference of Yukari instance
+            self.ircFactory.yuka = self
+            reactor.connectTCP(cfg['irc']['uri'], int(cfg['irc']['port']),
+                                                         self.ircFactory)
 
     def ircConnectionMade(self):
         self.ircc = True

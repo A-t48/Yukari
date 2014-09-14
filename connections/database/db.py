@@ -32,6 +32,9 @@ def _makeInsert(table, *args):
     sql = 'INSERT INTO %s VALUES (' + ('?,' * (len(args)-1)) + '?)'
     return sql % table, args
 
+def bulkInsert(fn, *args):
+    return dbp.runInteraction(fn, *args)
+
 def connect():
     dbp = adbapi.ConnectionPool('sqlite3', 'data.db', check_same_thread=False,
                                 cp_max=1)
