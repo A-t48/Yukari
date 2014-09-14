@@ -129,12 +129,13 @@ class CytubeProtocol(WebSocketClientProtocol):
             clog.error('Login error: Check credentials.', syst)
 
     def _cy_playlist(self, fdict):
-        self.playlist = []
+        timeNow = getTime()
+        self.playlist = fdict['args'][0]
         clog.info('playlist received!', syst)
         clog.info((str(fdict)).decode('unicode-escape'), syst)
-        playlist = fdict['args'][0]
-        d = _dbSelectQueuerId(self, playlist)
-        d.addCallback(_dbBulkInsertMedia, _dbBulkInsertMediaTxn, playlist)
+        d = _dbSelectQueuerId(self, self.playlist)
+        d.addCallback(insertMedia, _dbBulkInsertMediaTxn, self.playlist)
+        d.addCallback(_dbLookupQueueId, self, self.playlist, timeNow)
 
     # timing could change in the future
     def _cy_setMotd(self, fdict):
@@ -196,6 +197,19 @@ class CytubeProtocol(WebSocketClientProtocol):
         clog.info('Obtained keyId for %s, KeyId: %s' % (username, keyId), syst)
         self.userdict[username]['keyId'] = keyId
         return keyId
+
+    def setQueueId(self, queueId, uid):
+        i = self.getIndexFromUid(uid)
+        self.playlist[i]['queueId'] = queueId
+        clog.info('Set queueId of %s to uid %s' % (queueId, uid), syst)
+
+    def getIndexFromUid(self, uid):
+        """ Return media index of self.playlist given uid """
+        try:
+            media = (i for i in self.playlist if i['uid'] == uid).next()
+            return self.playlist.index(media)
+        except StopIteration as e:
+            clog.error('(getIndexFromUid) Media uid %s not found' % uid, syst)
 
     def sendCy(self, msg):
         self._sendf({'name': 'chatMsg', 'args': {'msg': msg}})
@@ -273,6 +287,10 @@ def _dbUsercount(usercount, anoncount, timeNow):
     values = (timeNow, usercount, anoncount)
     db.operate(sql, values)
 
+def insertMedia(useridList, fn, playlist):
+    _dbBulkInsertMedia(useridList, fn, playlist)
+    return defer.succeed(useridList)
+
 def _dbBulkInsertMedia(useridList, fn, playlist):
     dbpl = []
     for userid, mediad in zip(useridList, playlist):
@@ -306,3 +324,30 @@ def cbSelectQueuerId(results):
                # either guest or user not in CyUser
                useridList.append(1) # give to Yukari
     return defer.succeed(useridList)
+
+def _dbLookupQueueId(useridList, cy, playlist, timeNow):
+    #TODO deal with duplicate-allowed playlist
+    sql = ('SELECT queueId FROM Queue WHERE mediaId = (SELECT mediaId FROM '
+          'Media WHERE type=? AND id=?) ORDER BY queueId DESC LIMIT 1')
+    for mediad, userId in zip(playlist, useridList):
+        uid = mediad['uid']
+        mType = mediad['media']['type']
+        mId = mediad['media']['id']
+        binds = (mType, mId)
+        d = db.query(sql, binds)
+        d.addCallback(cbQueueId, cy, uid, userId, mType, mId, timeNow)
+        d.addCallback(cy.setQueueId, uid)
+
+def cbQueueId(queueId, cy, uid, userId, mType, mId, timeNow):
+    def _insertQueueLastRow(txn, sql, binds):
+        txn.execute(sql, binds)
+        return txn.lastrowid
+
+    if queueId:
+        return defer.succeed(queueId[0][0])
+    else:
+        sql = ('INSERT INTO Queue VALUES (?, (SELECT mediaId FROM Media WHERE '
+               'type=? AND id=?), ?, ?, ?)')
+        binds = (None, mType, mId, userId, 10000, 2)
+        return db.dbp.runInteraction(_insertQueueLastRow, sql, binds)
+
