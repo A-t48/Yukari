@@ -32,7 +32,8 @@ class CytubeProtocol(WebSocketClientProtocol):
     def __init__(self):
         modules = importPlugins('')
         self.triggers = {'commands':{},
-                         'changeMedia': {}}
+                         'changeMedia': {},
+                         'queue': {}}
         for module in modules:
             instance = module.setup()
             for method in dir(instance):
@@ -42,6 +43,8 @@ class CytubeProtocol(WebSocketClientProtocol):
                     self.triggers['commands'][trigger] = getattr(instance, method)
                 elif method.startswith('_cM_'):
                     self.triggers['changeMedia'][method] = getattr(instance, method)
+                elif method.startswith('_q_'):
+                    self.triggers['queue'][method] = getattr(instance, method)
 
         self.userdict = {}
         self.username = cfg['username']
@@ -134,8 +137,37 @@ class CytubeProtocol(WebSocketClientProtocol):
         clog.info('playlist received!', syst)
         clog.info((str(fdict)).decode('unicode-escape'), syst)
         d = _dbSelectQueuerId(self, self.playlist)
-        d.addCallback(insertMedia, _dbBulkInsertMediaTxn, self.playlist)
+        d.addCallback(bulkInsertMedia, _dbBulkInsertMediaTxn, self.playlist)
         d.addCallback(_dbLookupQueueId, self, self.playlist, timeNow)
+
+    def _cy_queue(self, fdict):
+        for key, method in self.triggers['queue'].iteritems():
+            method(self, fdict)
+        timeNow = getTime()
+        afterUid = fdict['args'][0]['after']
+        mediad = fdict['args'][0]['item']
+        isTemp = mediad['temp']
+        media = mediad['media']
+        queueby = mediad['queueby']
+        title = media['title']
+        dur = media['seconds']
+        mType = media['type']
+        mId = media['id']
+        uid = mediad['uid']
+        clog.info('%s queued %s' % (queueby, title), syst)
+        
+        clog.info(str(media), syst)
+        if queueby: # anonymous queue is empty string
+            userId = self.userdict.get(queueby, {}).get('keyId', None)
+        else:
+            userId = 3 # Anonymous user
+        if not userId:
+            clog.error('%s queued media but is not in userdict' % queueby, syst)
+            userId = 3 # give it to Anonymous user
+
+        d = _dbInsertMedia(userId, mType, mId, dur, title)
+        temp = 1 if isTemp else 0
+        d.addCallback(_dbInsertQueue, mType, mId, userId, timeNow, temp)
 
     # timing could change in the future
     def _cy_setMotd(self, fdict):
@@ -287,9 +319,24 @@ def _dbUsercount(usercount, anoncount, timeNow):
     values = (timeNow, usercount, anoncount)
     db.operate(sql, values)
 
-def insertMedia(useridList, fn, playlist):
-    _dbBulkInsertMedia(useridList, fn, playlist)
-    return defer.succeed(useridList)
+def _dbInsertMedia(userId, mType, mId, dur, title):
+    sql = 'INSERT OR IGNORE INTO Media VALUES (?, ?, ?, ?, ?, ?, ?)'
+    binds = (None, mType, mId, dur, title, userId, 0)
+    return db.operate(sql, binds)
+
+def _dbInsertQueue(ignored, mType, mId, userId, timeNow, temp):
+    sql = ('INSERT OR IGNORE INTO Queue VALUES (?, '
+          '(SELECT mediaId FROM Media WHERE type=? AND id=?), ?, ?, ?)')
+    binds = (None, mType, mId, userId, timeNow, temp)
+    return db.operate(sql, binds)
+
+def bulkInsertMedia(useridList, fn, playlist):
+    d = _dbBulkInsertMedia(useridList, fn, playlist)
+    d.addCallback(passthrough, useridList)
+    return d
+
+def passthrough(ignored, relay):
+    return defer.succeed(relay)
 
 def _dbBulkInsertMedia(useridList, fn, playlist):
     dbpl = []
@@ -348,6 +395,5 @@ def cbQueueId(queueId, cy, uid, userId, mType, mId, timeNow):
     else:
         sql = ('INSERT INTO Queue VALUES (?, (SELECT mediaId FROM Media WHERE '
                'type=? AND id=?), ?, ?, ?)')
-        binds = (None, mType, mId, userId, 10000, 2)
+        binds = (None, mType, mId, userId, timeNow, 2)
         return db.dbp.runInteraction(_insertQueueLastRow, sql, binds)
-
