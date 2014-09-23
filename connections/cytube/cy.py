@@ -260,6 +260,13 @@ class CytubeProtocol(WebSocketClientProtocol):
     def sendCy(self, msg):
         self._sendf({'name': 'chatMsg', 'args': {'msg': msg}})
 
+    def sendCyWhisper(self, msg):
+        head = cfg['head']
+        tail = cfg['tail']
+        msg = '%s%s%s' % (head, msg, tail)
+        self._sendf({'name': 'chatMsg', 'args': {'msg': msg}})
+
+
     def sendAll(self, msg):
         self.factory.yuka.sendAll(msg)
 

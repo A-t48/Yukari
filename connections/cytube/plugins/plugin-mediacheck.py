@@ -81,8 +81,7 @@ class MediaCheck(object):
             cy.deleteMedia(uid)
             msg = 'Removing non-playable media %s' % title
             db.flagMedia(0b1, mType, mId)
-            cy.sendCy(msg)
-
+            cy.sendCyWhisper(msg)
 
 def setup():
     return MediaCheck()

@@ -5,7 +5,7 @@ class AnnounceQueue(object):
             queueby = fdict['args'][0]['item']['queueby']
         except(KeyError):
             return
-        cy.sendCy('%s added %s!' % (queueby, title))
+        cy.sendCyWhisper('%s added %s!' % (queueby, title))
 
 def setup():
     return AnnounceQueue()
