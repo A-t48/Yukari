@@ -169,6 +169,10 @@ class CytubeProtocol(WebSocketClientProtocol):
         temp = 1 if isTemp else 0
         d.addCallback(_dbInsertQueue, mType, mId, userId, timeNow, temp)
 
+    def _cy_setCurrent(self, fdict):
+        """ Saves the uid of the currently playing media """
+        self.currentUid = fdict['args'][0]
+
     # timing could change in the future
     def _cy_setMotd(self, fdict):
         self.receivedChatBuffer = True
@@ -234,7 +238,7 @@ class CytubeProtocol(WebSocketClientProtocol):
         i = self.getIndexFromUid(uid)
         self.playlist[i]['queueId'] = queueId
         clog.info('Set queueId of %s to uid %s' % (queueId, uid), syst)
-
+    
     def getIndexFromUid(self, uid):
         """ Return media index of self.playlist given uid """
         try:
@@ -242,6 +246,16 @@ class CytubeProtocol(WebSocketClientProtocol):
             return self.playlist.index(media)
         except StopIteration as e:
             clog.error('(getIndexFromUid) Media uid %s not found' % uid, syst)
+
+    def getUidFromTypeId(self, mType, mId):
+        for media in self.playlist:
+            if media['media']['id'] == mId:
+                if media['media']['type'] == mType:
+                    return media['uid']
+
+    def deleteMedia(self, uid):
+        clog.info('Deleting media uid: %s' % uid, syst)
+        self._sendf({'name': 'delete', 'args': uid})
 
     def sendCy(self, msg):
         self._sendf({'name': 'chatMsg', 'args': {'msg': msg}})

@@ -35,6 +35,17 @@ def _makeInsert(table, *args):
 def bulkInsert(fn, *args):
     return dbp.runInteraction(fn, *args)
 
+def flagMedia(flag, mType, mId):
+    sql = 'UPDATE Media SET flag=(flag|?) WHERE type=? AND id=?'
+    binds = (flag, mType, mId)
+    return operate(sql, binds)
+
+def unflagMedia(flag, mType, mId):
+    sql = 'UPDATE Media SET flag=(flag&?) WHERE type=? AND id=?'
+    binds = (~flag, mType, mId)
+    return operate(sql, binds)
+
+
 def connect():
     dbp = adbapi.ConnectionPool('sqlite3', 'data.db', check_same_thread=False,
                                 cp_max=1)
