@@ -14,17 +14,26 @@ from yukari.tools import getTime
 cfg = cfg['Cytube']
 syst = 'CYTUBE'
 
-def importPlugins(path):
-    path = 'connections/cytube/plugins/'
+def importPlugins(paths):
+    """ Imports any .py file in paths[0], and will also look through
+    the first level directories for .py files to import """
+    paths = ['connections/cytube/plugins/']
     try:
-        files = os.listdir(path)
+        files = os.listdir(paths[0])
+        clog.info(str(files), 'files')
     except(OSError):
-        clog.error('Plugin import error! Check that %s exists.' % path, syst)
+        clog.error('Plugin import error! Check that %s exists.' % paths[0],syst)
         return []
-    importPath = path.replace('/', '.')
-    moduleNames = [importPath + i[:-3] for i in files
-                    if not i.startswith('_') and i.endswith('.py')]
+    # look for directories
+    subdir = [paths[0]+i+'/' for i in files if os.path.isdir(paths[0]+i)]
+    paths.extend(subdir)
+    moduleNames = []
+    for path in paths:
+        moduleNames.extend([path + i[:-3] for i in os.listdir(path)
+                        if not i.startswith('_') and i.endswith('.py')])
+    moduleNames = [p.replace('/', '.') for p in moduleNames]
     modules = map(importlib.import_module, moduleNames)
+    clog.warning(str(modules), 'modules')
     return modules
 
 class CytubeProtocol(WebSocketClientProtocol):

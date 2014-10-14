@@ -1,0 +1,3 @@
+[submodule "connections/cytube/plugins/vocadb"]
+	path = connections/cytube/plugins/vocadb
+	url = https://github.com/mikumonday/Yukari-vocadb.git
