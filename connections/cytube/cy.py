@@ -141,6 +141,11 @@ class CytubeProtocol(WebSocketClientProtocol):
         else:
             clog.error('Login error: Check credentials.', syst)
 
+    def _cy_moveVideo(self, fdict):
+        beforeUid = fdict['args'][0]['from']
+        afterUid = fdict['args'][0]['after']
+        self.movePlaylistItem(beforeUid, afterUid)
+
     def _cy_playlist(self, fdict):
         timeNow = getTime()
         self.playlist = fdict['args'][0]
@@ -151,8 +156,8 @@ class CytubeProtocol(WebSocketClientProtocol):
         d.addCallback(_dbLookupQueueId, self, self.playlist, timeNow)
 
     def _cy_queue(self, fdict):
-        for key, method in self.triggers['queue'].iteritems():
-            method(self, fdict)
+        #for key, method in self.triggers['queue'].iteritems():
+        #    method(self, fdict)
         timeNow = getTime()
         afterUid = fdict['args'][0]['after']
         mediad = fdict['args'][0]['item']
@@ -166,6 +171,9 @@ class CytubeProtocol(WebSocketClientProtocol):
         uid = mediad['uid']
         clog.info('%s queued %s' % (queueby, title), syst)
         
+        # add to self.playlist
+        self.addToPlaylist(mediad, afterUid)
+
         clog.info(str(media), syst)
         if queueby: # anonymous queue is empty string
             userId = self.userdict.get(queueby, {}).get('keyId', None)
@@ -175,9 +183,12 @@ class CytubeProtocol(WebSocketClientProtocol):
             clog.error('%s queued media but is not in userdict' % queueby, syst)
             userId = 3 # give it to Anonymous user
 
+        # insert or ignore into Media
         d = _dbInsertMedia(userId, mType, mId, dur, title)
         temp = 1 if isTemp else 0
-        d.addCallback(_dbInsertQueue, mType, mId, userId, timeNow, temp)
+        # insert into Queue
+        d.addCallback(cbQueueId, self, uid, userId, mType, mId, timeNow, temp)
+        d.addCallback(cy.setQueueId, mediad, playlist=False)
 
     def _cy_setCurrent(self, fdict):
         """ Saves the uid of the currently playing media """
@@ -244,10 +255,18 @@ class CytubeProtocol(WebSocketClientProtocol):
         self.userdict[username]['keyId'] = keyId
         return keyId
 
-    def setQueueId(self, queueId, uid):
+    def setQueueId(self, queueId, mediad, playlist=False):
+        """Set Queue Id to the media in self.playlist, and run the plug-in trigger
+        for queue. If it's a playlist, we don't run the queue trigger"""
+        uid = mediad['uid']
         i = self.getIndexFromUid(uid)
         self.playlist[i]['queueId'] = queueId
         clog.info('Set queueId of %s to uid %s' % (queueId, uid), syst)
+        mType = self.playlist[i]['media']['type']
+        mId = self.playlist[i]['media']['id']
+        if not playlist:
+            for key, method in self.triggers['queue'].iteritems():
+                method(self, mediad)
     
     def getIndexFromUid(self, uid):
         """ Return media index of self.playlist given uid """
@@ -262,6 +281,26 @@ class CytubeProtocol(WebSocketClientProtocol):
             if media['media']['id'] == mId:
                 if media['media']['type'] == mType:
                     return media['uid']
+
+    def addToPlaylist(self, mediad, afterUid):
+        if afterUid == 'prepend':
+            index = 0
+        else:
+            index = self.getIndexFromUid(afterUid)
+        self.playlist.insert(index + 1, mediad)
+        clog.debug('(addToPlaylist) Inserting uid %s %s after index %s' %
+                   (mediad['uid'], mediad['media']['title'], index), syst)
+
+    def movePlaylistItem(self, beforeUid, afterUid):
+        # 'before' is the uid of the video that is going to move
+        if afterUid == 'prepend':
+            indexAfter = 0
+        else:
+            indexAfter = self.getIndexFromUid(afterUid)
+        indexBefore = self.getIndexFromUid(beforeUid)
+        if indexBefore > indexAfter and afterUid != 'prepend':
+            indexAfter += 1
+        self.playlist.insert(indexAfter, self.playlist.pop(indexBefore))
 
     def deleteMedia(self, uid):
         clog.info('Deleting media uid: %s' % uid, syst)
@@ -413,10 +452,11 @@ def _dbLookupQueueId(useridList, cy, playlist, timeNow):
         mId = mediad['media']['id']
         binds = (mType, mId)
         d = db.query(sql, binds)
-        d.addCallback(cbQueueId, cy, uid, userId, mType, mId, timeNow)
-        d.addCallback(cy.setQueueId, uid)
+        # flag = 2; added from this function, i.e. new queue from playlist
+        d.addCallback(cbQueueId, cy, uid, userId, mType, mId, timeNow, 2)
+        d.addCallback(cy.setQueueId, mediad, playlist=True)
 
-def cbQueueId(queueId, cy, uid, userId, mType, mId, timeNow):
+def cbQueueId(queueId, cy, uid, userId, mType, mId, timeNow, flag):
     def _insertQueueLastRow(txn, sql, binds):
         txn.execute(sql, binds)
         return txn.lastrowid
@@ -426,5 +466,5 @@ def cbQueueId(queueId, cy, uid, userId, mType, mId, timeNow):
     else:
         sql = ('INSERT INTO Queue VALUES (?, (SELECT mediaId FROM Media WHERE '
                'type=? AND id=?), ?, ?, ?)')
-        binds = (None, mType, mId, userId, timeNow, 2)
+        binds = (None, mType, mId, userId, timeNow, flag)
         return db.dbp.runInteraction(_insertQueueLastRow, sql, binds)

@@ -13,9 +13,9 @@ class MediaCheck(object):
         flagged (Media) and deleted from the Cytube playlist.
         Videos are checked on queue and on changeMedia."""
 
-    def _q_checkMedia(self, cy, fdict):
-        media = fdict['args'][0]['item']['media']
-        uid = fdict['args'][0]['item']['uid']
+    def _q_checkMedia(self, cy, mediad):
+        media = mediad['media']
+        uid = mediad['uid']
         title = media['title']
         mType = media['type']
         mId = media['id']
